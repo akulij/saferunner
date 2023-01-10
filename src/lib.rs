@@ -3,15 +3,16 @@ pub struct User {
     pasword: String,
 }
 
-pub enum Status {
-    OK,
-    ERROR,
+pub fn runprog_safemode(user: Option<&User>, program: &str) {
+    if let Some(user) = user {
+        set_autologin(user);
+    }
+
+    set_runonce_program(program);
+
+    set_safemode();
+    reboot_pc();
 }
 
-pub fn runprog_safemode(user: Option<&User>, program: &str) -> Status {
-    Status::OK
-}
-
-pub fn back_to_normalmode() -> Status {
-    Status::ERROR
+pub fn back_to_normalmode() {
 }
