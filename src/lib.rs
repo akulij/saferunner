@@ -2,6 +2,7 @@ pub struct User {
     login: String,
     pasword: String,
 }
+
 pub enum Status {
     OK,
     ERROR,
