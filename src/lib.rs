@@ -1,14 +1,16 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
+pub struct User {
+    login: String,
+    pasword: String,
+}
+pub enum Status {
+    OK,
+    ERROR,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub fn runprog_safemode(user: &User, program: &str) -> Status {
+    Status::OK
+}
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub fn back_to_normalmode() -> Status {
+    Status::ERROR
 }
