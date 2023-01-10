@@ -8,7 +8,7 @@ pub enum Status {
     ERROR,
 }
 
-pub fn runprog_safemode(user: &User, program: &str) -> Status {
+pub fn runprog_safemode(user: Option<&User>, program: &str) -> Status {
     Status::OK
 }
 
