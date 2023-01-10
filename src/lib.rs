@@ -6,7 +6,6 @@ use winapi::um::winnt::{
     SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
 };
 use winapi::um::{
-    errhandlingapi::GetLastError,
     processthreadsapi::GetCurrentProcess,
     processthreadsapi::OpenProcessToken,
     securitybaseapi::AdjustTokenPrivileges,
