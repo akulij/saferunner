@@ -1,8 +1,13 @@
+#[allow(temporary_cstring_as_ptr)]
+use crate::tools::nullptr;
+use crate::tools::cstr;
+use crate::tools::random_code;
+
 mod tools;
 
 pub struct User {
     login: String,
-    pasword: String,
+    password: String,
 }
 
 #[cfg(windows)]
@@ -32,11 +37,11 @@ pub fn back_to_normalmode() {
 }
 
 fn set_safemode() -> bool {
-    run_bcd("/set safeboot network")
+    run_bcd("/set {current} safeboot network")
 }
 
 fn unset_safemode() -> bool {
-    run_bcd("/deletevalue safeboot")
+    run_bcd("/deletevalue {current} safeboot")
 }
 
 fn run_bcd(command: &str) -> bool {
@@ -56,15 +61,12 @@ fn run_bcd(command: &str) -> bool {
         }
     }
 
-    use tools::cstr;
-    use tools::nullptr;
-
     unsafe {
         ShellExecuteA(
             nullptr(),
-            cstr("runas"),
-            cstr("BCDEdit.exe"),
-            cstr(command),
+            cstr("runas").as_ptr(),
+            cstr("BCDEdit.exe").as_ptr(),
+            cstr(command).as_ptr(),
             nullptr(),
             SW_SHOWNORMAL,
         );
@@ -84,57 +86,124 @@ fn reboot_pc() {
     use winapi::um::winuser::{EWX_FORCEIFHUNG, EWX_REBOOT};
 
     unsafe {
+        use winapi::shared::ntdef::{HANDLE, LUID};
+        use winapi::um::winnt::SE_PRIVILEGE_ENABLED;
+        use winapi::um::winnt::TOKEN_ADJUST_PRIVILEGES;
+        use winapi::um::winnt::TOKEN_PRIVILEGES;
+        use winapi::um::winnt::TOKEN_QUERY;
+
+        use winapi::um::{
+            processthreadsapi::GetCurrentProcess, processthreadsapi::OpenProcessToken,
+            securitybaseapi::AdjustTokenPrivileges, winbase::LookupPrivilegeValueA,
+        };
+
+        let mut token: HANDLE = std::mem::zeroed();
+        let mut luid: LUID = std::mem::zeroed();
+
+        OpenProcessToken(
+            GetCurrentProcess(),
+            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+            &mut token,
+        );
+        LookupPrivilegeValueA(nullptr(), cstr("SeShutdownPrivilege").as_ptr(), &mut luid);
+
+        let mut tp: TOKEN_PRIVILEGES = std::mem::zeroed();
+        tp.PrivilegeCount = 1;
+        tp.Privileges[0].Luid = luid;
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        AdjustTokenPrivileges(token, 0, &mut tp, 0, nullptr(), nullptr());
+    }
+
+    unsafe {
         ExitWindowsEx(EWX_REBOOT, EWX_FORCEIFHUNG);
+        use winapi::um::errhandlingapi::GetLastError;
+        println!("REB: {}", GetLastError());
     }
 }
 
 fn set_autologin(user: &User) -> bool {
-    set_logon_data("DefaultUserName", user.login.as_str());
-    set_logon_data("DefaultPassword", user.pasword.as_str());
-    set_logon_data("AutoAdminLogon", "1");
+    if !set_logon_data("DefaultUserName", user.login.as_str()) {
+        return false;
+    }
+    if !set_logon_data("DefaultPassword", user.password.as_str()) {
+        return false;
+    }
+    if !set_logon_data("AutoAdminLogon", "1") {
+        return false;
+    }
 
     true
 }
 
 fn set_logon_data(value: &str, data: &str) -> bool {
-    use tools::cast_pointer;
-    use tools::encode_str;
-    use winapi::um::winnt::REG_EXPAND_SZ;
-    use winapi::um::winreg::RegSetKeyValueW;
-    use winapi::um::winreg::HKEY_LOCAL_MACHINE;
+    use winreg::enums::HKEY_LOCAL_MACHINE;
+    use winreg::enums::KEY_SET_VALUE;
+    use winreg::RegKey;
 
-    unsafe {
-        RegSetKeyValueW(
-            HKEY_LOCAL_MACHINE,
-            encode_str("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon"),
-            encode_str(value),
-            REG_EXPAND_SZ,
-            cast_pointer(encode_str(data)),
-            data.len() as u32 + 1,
-        );
-    }
+    let regkey = match RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey_with_flags(
+        "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
+        KEY_SET_VALUE,
+    ) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+
+    regkey.set_value(value, &data).unwrap();
 
     true
 }
 
 fn set_runonce_program(path: &str) -> bool {
-    use tools::cast_pointer;
-    use tools::encode_str;
-    use tools::random_code;
-    use winapi::um::winnt::REG_EXPAND_SZ;
-    use winapi::um::winreg::RegSetKeyValueW;
-    use winapi::um::winreg::HKEY_LOCAL_MACHINE;
+    use winreg::enums::HKEY_LOCAL_MACHINE;
+    use winreg::enums::KEY_SET_VALUE;
+    use winreg::RegKey;
 
-    unsafe {
-        RegSetKeyValueW(
-            HKEY_LOCAL_MACHINE,
-            encode_str("Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce"),
-            encode_str(random_code(6).as_str()),
-            REG_EXPAND_SZ,
-            cast_pointer(encode_str(path)),
-            path.len() as u32 + 1,
-        );
-    }
+    let regkey = match RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey_with_flags(
+        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
+        KEY_SET_VALUE,
+    ) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+
+    regkey
+        .set_value(random_code(6).as_str(), &(String::from("*") + path))
+        .unwrap();
 
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_set_safeboot() {
+        // set_safemode();
+    }
+
+    #[test]
+    fn test_unset_safeboot() {
+        unset_safemode();
+    }
+
+    #[test]
+    fn test_autologin() {
+        assert!(set_autologin(&User {
+            login: "test".to_string(),
+            password: "test".to_string()
+        }));
+    }
+    #[test]
+    fn test_runonce() {
+        assert!(set_runonce_program(
+            "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+        ));
+    }
+
+    #[test]
+    fn test_reboot() {
+        // reboot_pc();
+    }
 }
