@@ -14,6 +14,12 @@ pub fn is_wow64() -> bool {
     }
 }
 
+pub fn encode_str(s: &str) -> Vec<u16> {
+    let mut v= s.encode_utf16().collect::<Vec<u16>>();
+    v.push(0);
+    v
+}
+
 pub fn cstr(s: &str) -> std::ffi::CString {
     std::ffi::CString::new(s).expect("error creating cstring")
 }
@@ -35,6 +41,12 @@ pub fn random_code(lenght: u32) -> String {
                 .expect("Can't get char from alphabet")
         })
         .collect::<String>()
+}
+
+pub fn cast_ptr<T, O>(ptr: *mut T) -> *mut O {
+    unsafe {
+        std::mem::transmute(ptr)
+    }
 }
 
 #[cfg(test)]

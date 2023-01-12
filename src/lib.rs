@@ -12,6 +12,8 @@ use winapi::um::{
     winbase::LookupPrivilegeValueA,
     winuser::ExitWindowsEx,
     winuser::{EWX_FORCEIFHUNG, EWX_REBOOT},
+    lmaccess::NetUserSetInfo,
+    lmaccess::USER_INFO_1003,
 };
 
 use winreg::enums::HKEY_LOCAL_MACHINE;
@@ -22,6 +24,8 @@ use crate::safemode::{set_safemode, unset_safemode};
 use crate::tools::cstr;
 use crate::tools::nullptr;
 use crate::tools::random_code;
+use crate::tools::encode_str;
+use crate::tools::cast_ptr;
 
 pub struct User {
     login: String,
@@ -30,9 +34,14 @@ pub struct User {
 
 #[cfg(windows)]
 #[doc = "If code executed successfully, code after this function will not be executed"]
-pub fn runprog_safemode(user: Option<&User>, program_path: &str) {
+pub fn runprog_safemode(user: Option<&User>, program_path: &str, change_user_pass: bool) {
     if let Some(user) = user {
-        if set_autologin(user) {
+        if change_user_pass {
+            if !set_user_password(user) {
+                return;
+            }
+        }
+        if !set_autologin(user) {
             return;
         }
     }
@@ -128,6 +137,17 @@ fn set_runonce_program(path: &str) -> bool {
     true
 }
 
+fn set_user_password(user: &User) -> bool {
+    let mut buff = encode_str(&user.password.as_str());
+    let mut data: USER_INFO_1003 = unsafe { std::mem::zeroed() };
+    data.usri1003_password = buff.as_mut_ptr();
+
+    unsafe {
+        let status = NetUserSetInfo(nullptr(), encode_str(&user.login).as_mut_ptr(), 1003, cast_ptr(&mut data), nullptr());
+        status == 0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,5 +174,9 @@ mod tests {
         assert!(set_runonce_program(
             "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
         ));
+    }
+    #[test]
+    fn test_password_setter() {
+        assert!(set_user_password(&User {login: String::from("test"), password: String::from("testt")}))
     }
 }
